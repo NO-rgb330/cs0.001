@@ -1,0 +1,13 @@
+/* menu.css - base, main menu, VGUI-style windows */
+:root{color-scheme:dark;--g:#4c5844;--d:#3a4233;--l:#8a9580;--y:#ffb000;--t:#dfe5d6}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#000;overflow:hidden;font:13px Tahoma,Verdana,sans-serif;color:var(--t);user-select:none}
+#c{position:fixed;inset:0;width:100%;height:100%}
+#menu{position:fixed;inset:0;z-index:9;background:radial-gradient(circle at 78% 30%,#3a4f86,#0b1230 70%,#050818)}
+#logo{position:absolute;left:30px;bottom:24px;font:italic 900 26px Arial,sans-serif;letter-spacing:1px}#logo small{font:12px Tahoma;opacity:.6;margin-left:8px}
+#nav{position:absolute;left:30px;bottom:90px;font:19px Verdana,sans-serif}#nav div{padding:5px 0;cursor:pointer;color:#b9c1ae}#nav div:hover{color:#fff}
+.w{position:absolute;display:none;background:var(--g);border:1px solid var(--l);box-shadow:3px 3px 10px #000a;left:240px;top:50px;width:min(94vw,440px)}
+.w h4{margin:0;padding:6px 10px;font-weight:400;background:var(--d);border-bottom:1px solid var(--l)}.w .b{padding:12px}
+.w label{display:flex;justify-content:space-between;align-items:center;margin:6px 0;gap:10px}
+input,select{background:var(--d);color:var(--t);border:1px solid var(--l);padding:3px 6px;font:inherit;width:160px}
+button{background:var(--d);color:var(--t);border:1px solid var(--l);padding:4px 16px;font:inherit;cursor:pointer}button:hover{background:#5d6b52}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}td,th{padding:2px 6px;text-align:left;font-weight:400;white-space:nowrap}th{border-bottom:1px solid var(--l);color:var(--y)}tbody tr{cursor:pointer}tr.s{background:#6a7a5e}
