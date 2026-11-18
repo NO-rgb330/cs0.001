@@ -1,23 +1,205 @@
-/* js/controllers.js - player + bot controllers */
-function upP(dt){P.df=false;wtick(P,dt);if(!P.alive)return;const fr=phase!='freeze';
- moveP(dt,fr);                                                                 // GoldSrc-style movement (js/movement.js)
- P.burst=Math.max(0,P.burst-dt*(P.inv[P.cur]=='awp'?1:3.2));const id=P.inv[P.cur],w=WP[id],a=P.ammo[id];
- if(fr&&md&&P.cd<=0&&P.rel<=0&&(w.auto||clk)){clk=0;
-  if(w.melee){P.cd=w.rof;shootW(P,eye(P),aimDir(P),0);onShot(id);mech('knifeair')}
-  else if(a.m>0){a.m--;P.cd=w.rof;shootW(P,eye(P),aimDir(P),spreadOf(P,id));recoilKick(id,P.burst);onShot(id);P.burst++;if(id=='awp')zoom=0}   // AWP un-scopes after every shot
-  else{mech('empty');P.cd=.25;reload(P)}}
- if(keys.KeyE&&bomb.planted&&phase=='live'&&Math.hypot(P.x-bomb.x,P.z-bomb.z)<2.8)P.df=true;
- const z=id=='awp'&&zoom;cam.fov=[75,33,10][z?zoom:0]||75;cam.updateProjectionMatrix()}
-function think(b,dt){wtick(b,dt);b.df=false;if(!b.alive)return;if(phase!='live')return;let mx=0,mz=0,sp=5.8;b.seeT-=dt;
- if(b.seeT<=0){b.seeT=.25;let best=null,bd=55;for(const e of units){if(!e.alive||e.team==b.team)continue;const d=Math.hypot(e.x-b.x,e.z-b.z);if(d<bd&&los(b,e)){best=e;bd=d}}
-  if(best&&best!==b.tgt)b.react=[.8,.45,.22][cfg.skill]*(.7+rnd()*.6);b.tgt=best}
- const t=b.tgt;
- if(t&&t.alive){const dx=t.x-b.x,dz=t.z-b.z,d=Math.hypot(dx,dz);b.yaw=Math.atan2(-dx,-dz);b.st-=dt;if(b.st<=0){b.st=.5+rnd()*.8;b.sd=rnd()<.5?-1:1;b.still=rnd()<.5}
-  if(!b.still){mx=Math.cos(b.yaw)*b.sd;mz=-Math.sin(b.yaw)*b.sd;sp=3}b.react-=dt;const id=b.inv[b.cur],w=WP[id],a=b.ammo[id];
-  if(b.react<=0&&b.cd<=0&&b.rel<=0){if(a.m<=0)reload(b);else{a.m--;b.cd=w.rof*1.8+rnd()*.15;const o=eye(b),hs=rnd()<[.1,.2,.35][cfg.skill];
-   shootW(b,o,V(t.x,t.y+(hs?1.65:1.1),t.z).sub(o).normalize(),(.012+d*.0013)*[2,1.3,.8][cfg.skill]*(b.still?1:1.5))}}}
- else if(b.wp.length){const w=b.wp[0],dx=w[0]-b.x,dz=w[1]-b.z,d=Math.hypot(dx,dz);if(d<1)b.wp.shift();else{mx=dx/d;mz=dz/d;b.yaw=Math.atan2(-mx,-mz)}}
- else if(b.team=='T'&&b===bomb.carrier&&!bomb.planted){b.pl+=dt;if(b.pl>=3){bomb={planted:1,t:40,def:0,x:b.x,z:b.z,lb:0};bombM.position.set(b.x,.15,b.z);bombM.visible=true;toast('The bomb has been planted',3);
-  units.forEach(u=>{if(u.bot&&u.alive&&u.team=='CT')u.wp=[[bomb.x+rnd()-.5,bomb.z+rnd()-.5]]})}}
- else if(b.team=='CT'&&bomb.planted&&Math.hypot(b.x-bomb.x,b.z-bomb.z)<3)b.df=true;
- b.x+=mx*sp*dt;b.z+=mz*sp*dt;collide(b)}
+/* controllers.js - Human input binding + Bot AI (waypoint BFS, site plant/defuse, combat) */
+(function () {
+  CS.controllers = {
+    getLocalInput() {
+      const inp = CS.input;
+      return {
+        forward: inp.keys['KeyW'],
+        back: inp.keys['KeyS'],
+        left: inp.keys['KeyA'],
+        right: inp.keys['KeyD'],
+        walk: inp.keys['ShiftLeft'] || inp.keys['ShiftRight'],
+        crouch: inp.keys['ControlLeft'] || inp.keys['ControlRight'],
+        jump: inp.keys['Space'] || inp.wheelJump,
+        fire: inp.mouseDown && !inp.buyOpen,
+        reload: inp.keys['KeyR'],
+        use: inp.keys['KeyE']
+      };
+    },
+
+    updateBot(u, dt) {
+      if (!u.alive) return;
+      if (!u.ai) {
+        u.ai = {
+          path: [],
+          targetWp: null,
+          repathTimer: Math.random() * 0.5,
+          fireBurst: 0,
+          strafeDir: Math.random() < 0.5 ? 1 : -1,
+          strafeTimer: 1.0,
+          reactTimer: 0
+        };
+      }
+
+      const ai = u.ai;
+      const skill = CS.cfg.botSkill; // 0 Easy, 1 Normal, 2 Hard
+      const input = { forward: false, back: false, left: false, right: false, walk: false, crouch: false, jump: false, fire: false, reload: false, use: false };
+
+      // 1. Scan for visible enemies
+      const eye = CS.units.getEyePos(u);
+      let enemy = null, bestDist = 55;
+      for (const other of CS.units.list) {
+        if (!other.alive || other.team === u.team) continue;
+        const d = eye.distanceTo(CS.units.getEyePos(other));
+        if (d < bestDist) {
+          const toOther = CS.units.getEyePos(other).sub(eye).normalize();
+          const wall = CS.world.raycastMap(eye, toOther, d);
+          if (!wall) {
+            bestDist = d;
+            enemy = other;
+          }
+        }
+      }
+
+      // Ensure bot equips best weapon
+      if (u.slots[1] && u.activeSlot !== 1 && (u.slots[1].mag > 0 || u.slots[1].res > 0)) {
+        CS.weapons.switchSlot(u, 1);
+      } else if (u.activeSlot === 1 && u.slots[1].mag === 0 && u.slots[1].res === 0) {
+        CS.weapons.switchSlot(u, 2);
+      }
+
+      // 2. Combat mode
+      if (enemy) {
+        const targetEye = CS.units.getEyePos(enemy);
+        targetEye.y -= skill === 2 ? 0.05 : 0.25; // Hard bots aim closer to head
+        const diff = targetEye.sub(eye);
+        const targetYaw = Math.atan2(-diff.x, -diff.z);
+        const targetPitch = Math.atan2(diff.y, Math.hypot(diff.x, diff.z));
+
+        const turnSpeed = 5 + skill * 4;
+        u.yaw = this._lerpAngle(u.yaw, targetYaw, Math.min(1, dt * turnSpeed));
+        u.pitch += (targetPitch - u.pitch) * Math.min(1, dt * turnSpeed);
+
+        // Slight aim jitter based on skill
+        const aimErr = (2 - skill) * 0.045;
+        if (Math.abs(this._angleDiff(u.yaw, targetYaw)) < 0.16 + aimErr) {
+          ai.reactTimer += dt;
+          const reqReact = (2 - skill) * 0.22;
+          if (ai.reactTimer >= reqReact) {
+            input.fire = true;
+          }
+        }
+
+        // Strafe during gunfight
+        ai.strafeTimer -= dt;
+        if (ai.strafeTimer <= 0) {
+          ai.strafeTimer = 0.6 + Math.random() * 0.9;
+          ai.strafeDir *= -1;
+        }
+        if (ai.strafeDir > 0) input.right = true;
+        else input.left = true;
+        if (bestDist > 18) input.forward = true;
+
+        CS.movement.step(u, input, dt);
+        CS.weapons.update(u, input, dt);
+        return;
+      }
+
+      ai.reactTimer = 0;
+
+      // 3. Objective & Navigation mode
+      if (CS.round.state === 'LIVE') {
+        // CTs rush planted bomb & defuse
+        if (u.team === 'CT' && CS.world.bombPlanted && CS.world.bombPos) {
+          const distToBomb = u.pos.distanceTo(CS.world.bombPos);
+          if (distToBomb < 2.0) {
+            input.use = true;
+            u.crouching = true;
+            CS.combat.handleUseAction(u, true, dt);
+            CS.movement.step(u, input, dt);
+            return;
+          }
+        }
+
+        // T carrying C4 plants on site
+        if (u.team === 'T' && !CS.world.bombPlanted && u.slots[4] && CS.world.inSite(u.pos)) {
+          input.use = true;
+          CS.combat.handleUseAction(u, true, dt);
+          CS.movement.step(u, input, dt);
+          return;
+        }
+      }
+
+      // Waypoint pathing
+      ai.repathTimer -= dt;
+      if (ai.repathTimer <= 0 || ai.path.length === 0) {
+        ai.repathTimer = 2.0 + Math.random() * 1.5;
+        const goalWp = this._pickGoalWaypoint(u);
+        const startWp = this._nearestWaypoint(u.pos);
+        ai.path = this._bfs(startWp, goalWp);
+      }
+
+      if (ai.path.length > 0) {
+        const wp = CS.world.map.waypoints[ai.path[0]];
+        const dx = wp.x - u.pos.x;
+        const dz = wp.z - u.pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 1.8) {
+          ai.path.shift();
+        } else {
+          const moveYaw = Math.atan2(-dx, -dz);
+          u.yaw = this._lerpAngle(u.yaw, moveYaw, Math.min(1, dt * 6));
+          u.pitch *= Math.pow(0.05, dt);
+          input.forward = true;
+        }
+      }
+
+      // Reload when idle & low ammo
+      const item = u.activeItem;
+      const w = CS.WEAPONS[u.activeId];
+      if (w && w.mag > 0 && item.mag < w.mag * 0.4 && item.res > 0) input.reload = true;
+
+      CS.movement.step(u, input, dt);
+      CS.weapons.update(u, input, dt);
+    },
+
+    _pickGoalWaypoint(u) {
+      const wps = CS.world.map.waypoints;
+      if (u.team === 'CT' && CS.world.bombPlanted && CS.world.bombPos) {
+        return this._nearestWaypoint(CS.world.bombPos);
+      }
+      if (u.team === 'T' && !CS.world.bombPlanted) {
+        return Math.random() < 0.5 ? 8 : 10; // Site A or Site B
+      }
+      return Math.floor(Math.random() * wps.length);
+    },
+
+    _nearestWaypoint(pos) {
+      let best = 0, bestD = 1e9;
+      CS.world.map.waypoints.forEach((w, i) => {
+        const d = Math.hypot(w.x - pos.x, w.z - pos.z);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return best;
+    },
+
+    _bfs(start, goal) {
+      const wps = CS.world.map.waypoints;
+      const q = [[start]];
+      const seen = new Set([start]);
+      while (q.length) {
+        const path = q.shift();
+        const cur = path[path.length - 1];
+        if (cur === goal) return path;
+        for (const nb of wps[cur].n) {
+          if (!seen.has(nb)) {
+            seen.add(nb);
+            q.push([...path, nb]);
+          }
+        }
+      }
+      return [goal];
+    },
+
+    _angleDiff(a, b) {
+      let d = b - a;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    },
+
+    _lerpAngle(a, b, t) {
+      return a + this._angleDiff(a, b) * t;
+    }
+  };
+})();
