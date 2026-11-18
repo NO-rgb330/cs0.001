@@ -1,17 +1,137 @@
-/* js/round.js - round logic + main update */
-function endR(team,msg){phase='end';pt=5;sc[team]++;toast((team=='T'?'Terrorists':'Counter-Terrorists')+' win – '+msg,5);
- units.forEach(u=>u.money=Math.min(16000,u.money+(u.team==team?3250:1400)));snd(500,.4,.2,'triangle');if(sc[team]>=cfg.win)over=team}
-function stepRound(dt){pt-=dt;
- if(phase=='freeze'&&pt<=0){phase='live';pt=cfg.rt;toast('Go go go!',2)}
- else if(phase=='live'){
-  if(bomb.planted){bomb.t-=dt;const df=units.some(u=>u.alive&&u.team=='CT'&&u.df);bomb.def=df?bomb.def+dt:0;
-   if(Math.floor(bomb.t)!=bomb.lb){bomb.lb=Math.floor(bomb.t);snd(900,.08,.1,'square')}
-   if(bomb.def>=(units.some(u=>u.alive&&u.df&&u.kit)?5:10))endR('CT','Bomb defused');else if(bomb.t<=0)endR('T','Target bombed')}
-  if(phase=='live'){const ta=units.some(u=>u.alive&&u.team=='T'),ca=units.some(u=>u.alive&&u.team=='CT');
-   if(!ca)endR('T','Counter-Terrorists eliminated');else if(!ta&&!bomb.planted)endR('CT','Terrorists eliminated');else if(!ta&&bomb.planted&&false);else if(pt<=0&&!bomb.planted)endR('CT','Time expired')}}
- else if(phase=='end'&&pt<=0){if(over){toast('Match over',2);exitGame()}else newRound()}}
-function update(dt){stepRound(dt);upP(dt);for(const u of units)if(u.bot)think(u,dt);
- for(let i=tr.length-1;i>=0;i--){tr[i].life-=dt;if(tr[i].life<=0){scene.remove(tr[i]);tr.splice(i,1)}}
- for(const u of units)if(u.bot){u.g.position.x=u.x;u.g.position.z=u.z;if(u.alive)u.g.position.y=u.y;u.g.rotation.y=u.yaw;animBody(u,dt);botGunTick(u,dt)}
- if(bomb.planted)bombM.scale.setScalar(1+.3*(bomb.t%1<.15));
- camUpdate(dt);vmUpdate(dt);shellsUpdate(dt)}
+/* round.js - Round state machine, timers, bomb countdown, economy & win conditions */
+(function () {
+  CS.round = {
+    state: 'FREEZE', // FREEZE | LIVE | ROUND_END | MATCH_END
+    timer: 0,
+    bombTimer: 0,
+    scoreCT: 0,
+    scoreT: 0,
+    num: 1,
+    msgText: '',
+    msgTimer: 0,
+
+    startMatch() {
+      this.scoreCT = 0;
+      this.scoreT = 0;
+      this.num = 1;
+      CS.units._persist = null;
+      CS.units.spawnAll(true);
+      this.beginRound();
+    },
+
+    beginRound() {
+      this.state = 'FREEZE';
+      this.timer = CS.cfg.freezeTime;
+      this.bombTimer = 0;
+      CS.world.clearBomb();
+      CS.combat.defuseProgress = 0;
+      CS.combat.plantProgress = 0;
+      this.announce(`Round ${this.num} - Freeze Time`, 2.5);
+    },
+
+    announce(txt, dur = 3.5) {
+      this.msgText = txt;
+      this.msgTimer = dur;
+    },
+
+    update(dt) {
+      if (this.msgTimer > 0) {
+        this.msgTimer -= dt;
+        if (this.msgTimer <= 0) this.msgText = '';
+      }
+
+      if (this.state === 'FREEZE') {
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          this.state = 'LIVE';
+          this.timer = CS.cfg.roundTime;
+          this.announce('GO! GO! GO!', 1.8);
+          CS.sfx.tone(880, 0.12, 0.12);
+        }
+      } else if (this.state === 'LIVE') {
+        if (CS.world.bombPlanted) {
+          this.bombTimer -= dt;
+          if (this.bombTimer <= 0) {
+            this.onBombExploded();
+          }
+        } else {
+          this.timer -= dt;
+          if (this.timer <= 0) {
+            this.endRound('CT', 'Time Expired - Counter-Terrorists Win!');
+          }
+        }
+      } else if (this.state === 'ROUND_END') {
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          if (this.scoreCT >= CS.cfg.winLimit || this.scoreT >= CS.cfg.winLimit) {
+            this.state = 'MATCH_END';
+            const winTeam = this.scoreCT >= CS.cfg.winLimit ? 'Counter-Terrorists' : 'Terrorists';
+            this.announce(`${winTeam} Win the Match!`, 6);
+            this.timer = 5;
+          } else {
+            this.num++;
+            CS.units.resetForNewRound();
+            this.beginRound();
+          }
+        }
+      } else if (this.state === 'MATCH_END') {
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          this.startMatch();
+        }
+      }
+    },
+
+    onBombPlanted(siteId) {
+      this.bombTimer = CS.cfg.bombTime;
+      this.announce(`The Bomb has been planted at Site ${siteId}!`, 3.5);
+      CS.sfx.tone(520, 0.2, 0.14);
+    },
+
+    onBombDefused(defuser) {
+      CS.world.clearBomb();
+      defuser.money = Math.min(16000, defuser.money + 300);
+      this.endRound('CT', 'Bomb has been defused - Counter-Terrorists Win!');
+    },
+
+    onBombExploded() {
+      CS.sfx.explode();
+      if (CS.world.bombPos) {
+        for (const u of CS.units.list) {
+          if (!u.alive) continue;
+          const d = u.pos.distanceTo(CS.world.bombPos);
+          if (d < 22) CS.combat.applyDamage(u, Math.round((1 - d / 22) * 180), null, 'C4', false);
+        }
+      }
+      CS.world.clearBomb();
+      this.endRound('T', 'Target Destroyed - Terrorists Win!');
+    },
+
+    checkEnd() {
+      if (this.state !== 'LIVE') return;
+      const aliveCT = CS.units.list.some(u => u.team === 'CT' && u.alive);
+      const aliveT  = CS.units.list.some(u => u.team === 'T' && u.alive);
+
+      if (!aliveCT) {
+        this.endRound('T', 'Terrorists Win!');
+      } else if (!aliveT && !CS.world.bombPlanted) {
+        this.endRound('CT', 'Counter-Terrorists Win!');
+      }
+    },
+
+    endRound(winner, msg) {
+      if (this.state !== 'LIVE') return;
+      this.state = 'ROUND_END';
+      this.timer = 4.0;
+      if (winner === 'CT') this.scoreCT++;
+      else this.scoreT++;
+      this.announce(msg, 3.8);
+
+      // Economy payout
+      for (const u of CS.units.list) {
+        const reward = u.team === winner ? 3250 : 1900;
+        u.money = Math.min(16000, u.money + reward);
+      }
+    }
+  };
+})();
