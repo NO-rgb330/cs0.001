@@ -1,16 +1,107 @@
-/* js/game.js - game flow: start, exit, new round */
-function startGame(){cfg.skill=+$('s-skill').value;cfg.win=+$('s-win').value||8;cfg.rt=+$('s-rt').value||115;cfg.money=+$('s-money').value||800;cfg.name=$('o-name').value||'Player';cfg.xh=$('o-xh').value;cfg.sens=+$('o-sens').value;
- init();units.forEach(u=>scene.remove(u.g));units=[];sc={CT:0,T:0};round=0;over=0;
- P=mk('CT',0,cfg.name);for(let i=0;i<4;i++)mk('CT',1,NAMES[i]);for(let i=0;i<5;i++)mk('T',1,NAMES[4+i]);
- $('menu').style.display='none';$('hud').style.display='block';$('xh').style.setProperty('--x',cfg.xh);state='play';newRound();ren.domElement.requestPointerLock()}
-function exitGame(){state='menu';document.exitPointerLock();$('menu').style.display='block';$('hud').style.display='none';$('pause').style.display='none'}
-function newRound(){round++;phase='freeze';pt=5;bomb={planted:0,t:0,def:0,carrier:null};bombM.visible=false;buyOpen=0;$('buy').style.display='none';
- site=rnd()<.5?'A':'B';const kinds=['E','M','E','M',rnd()<.5?'E':'M'];let ci=0,ti=0;
- for(const u of units){if(u.died||!u.alive){loadout(u);u.died=0}u.alive=true;u.hp=100;u.g.visible=!!u.bot;u.g.rotation.set(0,0,0);u.y=0;u.vy=0;u.tgt=null;u.wp=[];u.rel=0;u.cd=0;u.pl=0;
-  if(u.bot)botBuy(u);
-  
-  u.cur=u.inv[1]?1:2;
-  if(u.team=='T'){u.x=-8+ti*4;u.z=42;u.yaw=0;if(u.bot){u.wp=route(site,kinds[ti]);if(!ti)bomb.carrier=u}ti++}
-  else{u.x=-8+ci*4;u.z=-43;u.yaw=Math.PI;if(u.bot)u.wp=[HOLD[ci-1].slice()];ci++}u.pitch=0}
- toast('Round '+round+' – '+(P.alive?'Defend sites A and B':''),3)}
-function toast(s,t=3){$('msg').textContent=s;mt=t}
+/* game.js - WebGLRenderer, camera FOV/positioning, and main fixed-clamped loop */
+(function () {
+  CS.game = {
+    renderer: null,
+    camera: null,
+    running: false,
+    _lastTime: 0,
+
+    init() {
+      const canvas = document.getElementById('c');
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+      this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 160);
+
+      window.addEventListener('resize', () => {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      CS.input.init();
+      requestAnimationFrame((t) => this.loop(t));
+    },
+
+    start() {
+      CS.world.init('de_sandbox');
+      CS.round.startMatch();
+      CS.hands.init(this.camera);
+      CS.world.scene.add(this.camera);
+
+      this.running = true;
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('hud').style.display = 'block';
+      document.getElementById('pause').style.display = 'flex';
+      document.getElementById('c').requestPointerLock();
+    },
+
+    stop() {
+      this.running = false;
+      CS.buymenu.close();
+      if (document.pointerLockElement) document.exitPointerLock();
+      document.getElementById('hud').style.display = 'none';
+      document.getElementById('pause').style.display = 'none';
+      document.getElementById('menu').style.display = 'block';
+    },
+
+    loop(now) {
+      requestAnimationFrame((t) => this.loop(t));
+      const dt = Math.min(0.05, (now - (this._lastTime || now)) / 1000);
+      this._lastTime = now;
+
+      if (!this.running) return;
+
+      CS.round.update(dt);
+      CS.world.update(dt);
+
+      // Update units
+      for (const u of CS.units.list) {
+        if (u.isLocal) {
+          const inp = CS.controllers.getLocalInput();
+          CS.movement.step(u, inp, dt);
+          CS.weapons.update(u, inp, dt);
+          CS.combat.handleUseAction(u, inp.use, dt);
+        } else {
+          CS.controllers.updateBot(u, dt);
+        }
+        u.model.update(dt);
+      }
+
+      this._updateCamera();
+      CS.hands.update(dt);
+      CS.hud.update(dt);
+      CS.input.endFrame();
+
+      this.renderer.render(CS.world.scene, this.camera);
+    },
+
+    _updateCamera() {
+      const u = CS.units.local;
+      if (!u) return;
+
+      if (u.alive) {
+        this.camera.position.copy(CS.units.getEyePos(u));
+        this.camera.rotation.order = 'YXZ';
+        this.camera.rotation.y = u.yaw + u.recoilYaw * 0.025;
+        this.camera.rotation.x = THREE.MathUtils.clamp(u.pitch + u.recoilPitch * 0.025, -1.5, 1.5);
+
+        const targetFov = u.scopeLevel === 2 ? 15 : u.scopeLevel === 1 ? 40 : 75;
+        if (this.camera.fov !== targetFov) {
+          this.camera.fov = targetFov;
+          this.camera.updateProjectionMatrix();
+        }
+      } else {
+        // Spectate first alive teammate on death
+        const spec = CS.units.list.find(o => o.alive && o.team === u.team) || u;
+        this.camera.position.set(spec.pos.x, spec.pos.y + 2.4, spec.pos.z + 3.2);
+        this.camera.lookAt(spec.pos.x, spec.pos.y + 1.0, spec.pos.z);
+        if (this.camera.fov !== 75) {
+          this.camera.fov = 75;
+          this.camera.updateProjectionMatrix();
+        }
+      }
+    }
+  };
+})();
