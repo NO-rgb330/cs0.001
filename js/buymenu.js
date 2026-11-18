@@ -1,46 +1,85 @@
-/* js/buymenu.js - CS 1.6-style buy menu (player: B key, bots: botBuy at round start) */
-// soon:1 = shown greyed out until that gun is implemented
-const BUY={
- 1:{n:'Handgun',i:[{id:'deagle',n:'Desert Eagle .50AE',cost:650},{n:'P228 Compact',cost:600,soon:1},{n:'Dual Elites',cost:800,soon:1}]},
- 2:{n:'Shotgun',i:[{n:'Benelli M3 Super90',cost:1700,soon:1},{n:'Benelli XM1014',cost:3000,soon:1}]},
- 3:{n:'Sub-Machine Gun',i:[{n:'MP5 Navy',cost:1500,soon:1},{n:'FN P90',cost:2350,soon:1}]},
- 4:{n:'Rifle',i:[{id:'ak',n:'AK-47',cost:2500,team:'T'},{id:'m4',n:'Colt M4A1',cost:3100,team:'CT'},{id:'awp',n:'AWP Magnum Sniper',cost:4750},{n:'Scout',cost:2750,soon:1}]},
- 5:{n:'Machine Gun',i:[{n:'FN M249 Para',cost:5750,soon:1}]},
- 6:{n:'Primary Ammo ($60)',act:()=>buyAmmo(1,60)},
- 7:{n:'Secondary Ammo ($50)',act:()=>buyAmmo(2,50)},
- 8:{n:'Equipment',i:[{kind:'armor',n:'Kevlar Vest',cost:650},{kind:'helm',n:'Kevlar + Helmet',cost:1000},{kind:'kit',n:'Defuse Kit',cost:200,team:'CT'}]}};
-let buyCat=0;
-const canBuy=()=>P.alive&&(phase=='freeze'||(phase=='live'&&cfg.rt-pt<20&&!bomb.planted));
+/* buymenu.js - Classic CS 1.6 VGUI text buy menu & bot economy purchasing */
+(function () {
+  CS.buymenu = {
+    open: false,
 
-// shared by player and bots; returns true if the purchase went through
-function purchase(u,it,ui){
- if(it.soon||(it.team&&it.team!=u.team))return false;
- let c=it.cost;if(it.kind=='helm'&&u.armor>0)c=350;
- if((it.kind=='armor'&&u.armor>=100)||(it.kind=='helm'&&u.armor>=100&&u.helmet)||(it.kind=='kit'&&(u.kit||u.team!='CT')))return false;
- if(u.money<c){if(ui)toast('Not enough money',1.5);return false}
- u.money-=c;
- if(it.kind=='armor')u.armor=100;else if(it.kind=='helm'){u.armor=100;u.helmet=1}else if(it.kind=='kit')u.kit=1;
- else{give(u,it.id);if(ui){u.cur=WP[it.id].slot;if(u===P)onSwitch()}}
- return true}
-function buyAmmo(slot,c){const id=P.inv[slot],w=id&&WP[id];if(!w||!w.mag)return toast('Nothing to refill',1.5);
- if(P.money<c)return toast('Not enough money',1.5);P.money-=c;P.ammo[id].r=w.res;renderBuy()}
+    toggle() {
+      const u = CS.units.local;
+      if (!u || !u.alive) return;
+      this.open = !this.open;
+      CS.input.buyOpen = this.open;
+      this.render();
+    },
 
-function botBuy(u){const rif=u.team=='T'?'ak':'m4',R=BUY[4].i,E=BUY[8].i;
- if(!u.inv[1]){
-  if(cfg.skill==2&&u.money>=5400&&rnd()<.25)purchase(u,R[2]);
-  else if(u.money>=WP[rif].cost+1000||(u.money>=WP[rif].cost&&rnd()<.5))purchase(u,R.find(x=>x.id==rif));
-  else if(u.money>=650&&rnd()<.4)purchase(u,BUY[1].i[0])}
- if(u.money>=1000)purchase(u,E[1]);else if(u.money>=650&&u.armor<50)purchase(u,E[0]);
- if(u.team=='CT'&&rnd()<.5)purchase(u,E[2])}
+    close() {
+      this.open = false;
+      CS.input.buyOpen = false;
+      const el = document.getElementById('buy');
+      if (el) el.style.display = 'none';
+    },
 
-function renderBuy(){
- const row=(k,n,cost,off)=>`<div class="it${off?' off':''}"><b>${k}</b>${n}${cost!=null?`<span>$${cost}</span>`:''}</div>`;
- let r;
- if(!buyCat)r=Object.keys(BUY).map(k=>row(k,BUY[k].n));
- else r=BUY[buyCat].i.map((it,j)=>row(j+1,it.n,it.cost,it.soon||(it.team&&it.team!=P.team)));
- $('buy').innerHTML=`<h4>${buyCat?BUY[buyCat].n:'Buy'} · $${P.money}</h4><div class="b">${r.join('')}${row(0,buyCat?'Back':'Exit')}</div>`}
-function toggleBuy(){buyCat=0;buyOpen=canBuy()&&!buyOpen;$('buy').style.display=buyOpen?'block':'none';if(buyOpen)renderBuy()}
-function buyKey(n){
- if(n==0){if(buyCat){buyCat=0;renderBuy()}else toggleBuy();return}
- if(!buyCat){const c=BUY[n];if(!c)return;if(c.act)c.act();else buyCat=n;renderBuy();return}
- const it=BUY[buyCat].i[n-1];if(it&&purchase(P,it,1)){buyCat=0;renderBuy()}}
+    render() {
+      const el = document.getElementById('buy');
+      const u = CS.units.local;
+      if (!this.open || !u) { el.style.display = 'none'; return; }
+
+      el.style.display = 'block';
+      const items = CS.BUY_MENU.filter(it => !it.team || it.team === u.team);
+      el.innerHTML = items.map((it, idx) => {
+        const can = u.money >= it.price;
+        return `<div class="it ${can ? '' : 'off'}"><b>${idx + 1}</b>${it.label}<span>$${it.price}</span></div>`;
+      }).join('') + `<div class="it" style="border-top:1px solid #444;margin-top:4px"><b>0</b>Close</div>`;
+    },
+
+    handleKey(digit) {
+      if (!this.open) return false;
+      if (digit === '0') { this.close(); return true; }
+
+      const u = CS.units.local;
+      const items = CS.BUY_MENU.filter(it => !it.team || it.team === u.team);
+      const item = items[Number(digit) - 1];
+      if (!item) return false;
+
+      if (this.buy(u, item)) {
+        CS.sfx.tone(660, 0.06, 0.08);
+        this.close();
+      } else {
+        CS.sfx.tone(180, 0.08, 0.08);
+      }
+      return true;
+    },
+
+    buy(u, item) {
+      if (u.money < item.price) return false;
+      if (item.isArmor) {
+        if (u.armor >= 100) return false;
+        u.money -= item.price;
+        u.armor = 100;
+        return true;
+      }
+
+      const w = CS.WEAPONS[item.id];
+      if (!w) return false;
+      u.money -= item.price;
+      u.slots[w.slot] = { id: w.id, mag: w.mag, res: w.res };
+      CS.weapons.switchSlot(u, w.slot);
+      return true;
+    },
+
+    botBuy(u) {
+      if (u.money >= 1000 && u.armor < 50) {
+        this.buy(u, CS.BUY_MENU.find(i => i.isArmor));
+      }
+      if (!u.slots[1]) {
+        const prefs = u.team === 'CT' ? ['m4a1', 'mp5'] : ['ak47', 'mp5'];
+        for (const wid of prefs) {
+          const entry = CS.BUY_MENU.find(i => i.id === wid);
+          if (entry && u.money >= entry.price) {
+            this.buy(u, entry);
+            break;
+          }
+        }
+      }
+    }
+  };
+})();
