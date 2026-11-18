@@ -1,25 +1,170 @@
-/* js/combat.js - combat: raycasts, collision, sound, shooting, death */
-function rayBox(o,d,b){let t0=0,t1=1e9;for(const [a,mn,mx,dd] of [[o.x,b.x0,b.x1,d.x],[o.y,b.y0,b.y1,d.y],[o.z,b.z0,b.z1,d.z]]){
- if(Math.abs(dd)<1e-8){if(a<mn||a>mx)return 1e9}else{let u=(mn-a)/dd,v=(mx-a)/dd;if(u>v){const x=u;u=v;v=x}t0=Math.max(t0,u);t1=Math.min(t1,v);if(t0>t1)return 1e9}}return t0}
-const boxesOf=e=>[[{x0:e.x-.32,x1:e.x+.32,z0:e.z-.32,z1:e.z+.32,y0:e.y,y1:e.y+1.5},0],[{x0:e.x-.22,x1:e.x+.22,z0:e.z-.22,z1:e.z+.22,y0:e.y+1.5,y1:e.y+1.9},1]];
-const eye=u=>V(u.x,u.y+(u.cr?1.2:1.6),u.z),dirOf=u=>V(-Math.sin(u.yaw)*Math.cos(u.pitch),Math.sin(u.pitch),-Math.cos(u.yaw)*Math.cos(u.pitch));
-function los(a,b){const o=V(a.x,a.y+1.5,a.z),d=V(b.x-a.x,b.y+1.2-a.y-1.5,b.z-a.z);for(const w of walls)if(rayBox(o,d,w)<1)return false;return true}
-function collide(u){for(let k=0;k<2;k++)for(const w of walls){if(u.y>=w.y1-.05)continue;const cx=Math.max(w.x0,Math.min(u.x,w.x1)),cz=Math.max(w.z0,Math.min(u.z,w.z1)),dx=u.x-cx,dz=u.z-cz,d=Math.hypot(dx,dz);
- if(d<.4){if(d<1e-4){u.x+=.4}else{u.x+=dx/d*(.4-d);u.z+=dz/d*(.4-d)}}}}
-let ac;function snd(f,d,v=.2,ty='sawtooth',dist=0){try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain(),n=ac.currentTime;o.type=ty;o.frequency.setValueAtTime(f,n);o.frequency.exponentialRampToValueAtTime(f*.3,n+d);
- g.gain.setValueAtTime(v/(1+dist*.1),n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g).connect(ac.destination);o.start();o.stop(n+d)}catch(e){}}
-function tracer(a,b){const l=new T3.Line(new T3.BufferGeometry().setFromPoints([a,b]),new T3.LineBasicMaterial({color:0xffee88}));l.life=.05;scene.add(l);tr.push(l)}
-function shootW(u,o,d0,sp){const id=u.inv[u.cur],w=WP[id];const d=V(d0.x+(rnd()-.5)*sp*2,d0.y+(rnd()-.5)*sp*2,d0.z+(rnd()-.5)*sp*2).normalize();
- let best=w.melee?2.4:300,hit=null,hd=0;for(const b of walls){const t=rayBox(o,d,b);if(t<best){best=t;hit=null}}
- for(const e of units){if(!e.alive||e===u||e.team==u.team)continue;for(const [b,h] of boxesOf(e)){const t=rayBox(o,d,b);if(t<best){best=t;hit=e;hd=h}}}
- if(!w.melee)tracer(o.clone().addScaledVector(d,1.2).add(V(0,-.15,0)),o.clone().addScaledVector(d,best));
- if(best<299)impact(o.clone().addScaledVector(d,best),d,!!hit);
- if(w.melee&&u===P)mech(hit?'knifehit':best<2.4?'knifewall':'knifeair');
- if(!w.melee)gunSnd(id,u===P?0:Math.hypot(u.x-P.x,u.z-P.z));
- if(hit){let dm=w.dmg*(hd&&!w.melee?4:1);if(hit.armor>0&&(!hd||hit.helmet)){hit.armor=Math.max(0,hit.armor-dm*.4);dm*=.6}hit.hp-=dm;if(hit===P)$('hurt').style.opacity=.7;if(hit.hp<=0)die(hit,u,id,hd)}}
-function die(v,k,id,hs){v.alive=false;v.hp=0;v.died=1;v.g.rotation.x=-1.5;v.g.position.y=.3;v.d++;k.k++;k.money=Math.min(16000,k.money+300);
- feed.push({s:`<span style="color:${k.team=='T'?'#f66':'#6af'}">${k.name}</span> [${WP[id].n}]${hs?' ★':''} <span style="color:${v.team=='T'?'#f66':'#6af'}">${v.name}</span>`,t:5});
- if(v===P)toast('You were killed by '+k.name,3);
- if(bomb.carrier===v)bomb.carrier=units.find(u=>u.alive&&u.team=='T'&&u.bot)||null;snd(300,.3,.15,'square',Math.hypot(v.x-P.x,v.z-P.z))}
-function reload(u){const id=u.inv[u.cur],w=WP[id],a=u.ammo[id];if(!w.mag||u.rel>0||a.m>=w.mag||a.r<=0)return;u.rel=u.relT=REL[id]||2.2;if(u===P)zoom=0}
-function wtick(u,dt){u.cd-=dt;if(u.rel>0){u.rel-=dt;if(u.rel<=0){const id=u.inv[u.cur],w=WP[id],a=u.ammo[id],n=Math.min(w.mag-a.m,a.r);a.m+=n;a.r-=n}}}
+/* combat.js - Raycast ballistics, hitboxes, damage, kill feed, C4 plant & defuse */
+(function () {
+  CS.combat = {
+    defuseProgress: 0,
+    plantProgress: 0,
+
+    fireShot(shooter) {
+      const w = CS.WEAPONS[shooter.activeId];
+      if (!w) return;
+
+      if (w.id === 'knife') {
+        this._knifeAttack(shooter, w);
+        return;
+      }
+
+      const eye = CS.units.getEyePos(shooter);
+      const fwd = CS.units.getForward(shooter);
+
+      // Compute dynamic spread
+      const speed = Math.hypot(shooter.vel.x, shooter.vel.z);
+      let spread = w.spread;
+      if (!shooter.onGround) spread += w.moveSpread * 1.8;
+      else if (speed > 1.0) spread += w.moveSpread * (speed / CS.phys.speedRun);
+      if (shooter.crouching) spread *= 0.65;
+      if (w.scope && shooter.scopeLevel === 0) spread += 0.065; // AWP noscope inaccuracy
+
+      // Apply spread & accumulated recoil
+      const dir = fwd.clone();
+      dir.x += (Math.random() - 0.5) * spread * 2;
+      dir.y += (Math.random() - 0.5) * spread * 2 + shooter.recoilPitch * 0.02;
+      dir.z += (Math.random() - 0.5) * spread * 2;
+      dir.normalize();
+
+      // Map intersection distance
+      const mapHit = CS.world.raycastMap(eye, dir, w.range);
+      const maxDist = mapHit ? mapHit.distance : w.range;
+
+      // Unit hitbox intersection
+      const targets = [];
+      for (const u of CS.units.list) {
+        if (!u.alive || u === shooter || u.team === shooter.team) continue;
+        targets.push(...u.model.hitMeshes);
+      }
+
+      const rc = new THREE.Raycaster(eye, dir, 0.1, maxDist);
+      const hits = rc.intersectObjects(targets, false);
+
+      let endPoint = mapHit ? mapHit.point : eye.clone().addScaledVector(dir, w.range);
+      let hitWall = !!mapHit;
+
+      if (hits.length > 0) {
+        const hit = hits[0];
+        endPoint = hit.point;
+        hitWall = false;
+
+        const { unit: victim, zone } = hit.object.userData;
+        let dmg = w.dmg;
+        if (zone === 'head') dmg *= 3.2;
+        else if (zone === 'legs') dmg *= 0.72;
+
+        // Armor absorption (50% reduction on body/head if armored)
+        if (victim.armor > 0 && zone !== 'legs') {
+          const absorbed = Math.min(victim.armor, dmg * 0.4);
+          victim.armor = Math.max(0, Math.round(victim.armor - absorbed * 0.5));
+          dmg -= absorbed;
+        }
+
+        if (shooter.isLocal) CS.sfx.hit(zone === 'head');
+        this.applyDamage(victim, Math.round(dmg), shooter, w.name, zone === 'head');
+      }
+
+      // Visual tracer from slight weapon offset
+      const startTracer = eye.clone().add(new THREE.Vector3(0, -0.08, 0));
+      CS.world.addTracer(startTracer, endPoint, hitWall);
+    },
+
+    _knifeAttack(shooter, w) {
+      const eye = CS.units.getEyePos(shooter);
+      const dir = CS.units.getForward(shooter);
+      const targets = [];
+      for (const u of CS.units.list) {
+        if (!u.alive || u === shooter || u.team === shooter.team) continue;
+        targets.push(...u.model.hitMeshes);
+      }
+      const rc = new THREE.Raycaster(eye, dir, 0.1, w.range);
+      const hits = rc.intersectObjects(targets, false);
+      if (hits.length) {
+        const { unit: victim, zone } = hits[0].object.userData;
+        CS.sfx.hit(zone === 'head');
+        this.applyDamage(victim, zone === 'head' ? 90 : w.dmg, shooter, 'Knife', zone === 'head');
+      }
+    },
+
+    applyDamage(victim, dmg, attacker, weaponName, isHeadshot) {
+      if (!victim.alive) return;
+      victim.hp -= dmg;
+
+      if (victim.isLocal) {
+        CS.hud.flashHurt();
+      }
+
+      if (victim.hp <= 0) {
+        victim.hp = 0;
+        victim.alive = false;
+        victim.deaths++;
+
+        if (attacker && attacker !== victim) {
+          attacker.kills++;
+          attacker.money = Math.min(16000, attacker.money + (weaponName === 'Knife' ? 1500 : 300));
+        }
+
+        // Drop C4 at death location if T dies holding it? Simply transfer/drop near site or give to surviving T
+        if (victim.slots[4]) {
+          victim.slots[4] = null;
+          const nextT = CS.units.list.find(u => u.alive && u.team === 'T');
+          if (nextT) nextT.slots[4] = { id: 'c4', mag: 0, res: 0 };
+        }
+
+        CS.hud.addKillFeed(attacker ? attacker.name : 'World', attacker?.team, victim.name, victim.team, weaponName, isHeadshot);
+        CS.round.checkEnd();
+      }
+    },
+
+    handleUseAction(u, holdingE, dt) {
+      if (!u.alive || CS.round.state !== 'LIVE') {
+        if (u.isLocal) { this.defuseProgress = 0; this.plantProgress = 0; }
+        return;
+      }
+
+      if (!holdingE) {
+        if (u.isLocal) { this.defuseProgress = 0; this.plantProgress = 0; }
+        return;
+      }
+
+      // CT Defusing planted bomb
+      if (u.team === 'CT' && CS.world.bombPlanted && CS.world.bombPos) {
+        const dist = u.pos.distanceTo(CS.world.bombPos);
+        if (dist <= 2.3) {
+          this.defuseProgress += dt;
+          if (this.defuseProgress >= CS.cfg.defuseTime) {
+            this.defuseProgress = 0;
+            CS.round.onBombDefused(u);
+          }
+          return;
+        }
+      }
+
+      // T Planting C4 on site A or B
+      if (u.team === 'T' && !CS.world.bombPlanted && u.slots[4]) {
+        const site = CS.world.inSite(u.pos);
+        if (site) {
+          this.plantProgress += dt;
+          if (this.plantProgress >= 2.6) {
+            this.plantProgress = 0;
+            u.slots[4] = null;
+            if (u.activeSlot === 4) CS.weapons.switchSlot(u, u.slots[1] ? 1 : 2);
+            CS.world.plantBomb(u.pos);
+            CS.round.onBombPlanted(site.id);
+          }
+          return;
+        }
+      }
+
+      if (u.isLocal) {
+        this.defuseProgress = 0;
+        this.plantProgress = 0;
+      }
+    }
+  };
+})();
