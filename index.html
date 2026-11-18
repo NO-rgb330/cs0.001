@@ -1,13 +1,22 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Counter-Strike: Web Edition</title>
 <link rel="stylesheet" href="css/menu.css"><link rel="stylesheet" href="css/hud.css"></head><body>
 <canvas id="c"></canvas>
-<div id="hud"><canvas id="rad" width="130" height="130"></canvas><div id="score"></div><div id="feed"></div><div id="msg"></div><div id="hurt"></div>
-<div id="xh"><i></i><i></i><i></i><i></i></div><div id="df"><i></i></div>
-<div class="h" style="left:16px"><span>✚ <b id="hp">100</b></span><span>◈ <b id="ar">0</b></span></div>
-<div class="h" style="left:50%;transform:translateX(-50%)"><span id="tm">1:55</span></div>
-<div class="h" style="right:16px;flex-direction:column;align-items:flex-end;gap:0"><span id="mon" style="font-size:24px">$800</span><span id="am">30 | 90</span></div>
-<div id="buy" class="w"></div><div id="sb"></div></div>
-<div id="pause"><div>Click to play<br><small>WASD move · Shift walk · Ctrl crouch · Space / mouse wheel jump · LMB fire · RMB scope (AWP, 2 levels) · Q last weapon<br>R reload · 1/2/3 weapons · B buy · hold E defuse · Tab scoreboard</small></div><button id="dc">Disconnect</button></div>
+<div id="hud">
+  <div id="scope"></div>
+  <canvas id="rad" width="130" height="130"></canvas>
+  <div id="score"></div>
+  <div id="feed"></div>
+  <div id="msg"></div>
+  <div id="hurt"></div>
+  <div id="xh"><i></i><i></i><i></i><i></i></div>
+  <div id="df"><i></i></div>
+  <div class="h" style="left:16px"><span>✚ <b id="hp">100</b></span><span>◈ <b id="ar">0</b></span></div>
+  <div class="h" style="left:50%;transform:translateX(-50%)"><span id="tm">1:55</span></div>
+  <div class="h" style="right:16px;flex-direction:column;align-items:flex-end;gap:0"><span id="mon" style="font-size:24px">$800</span><span id="am">30 | 90</span></div>
+  <div id="buy" class="w"></div>
+  <div id="sb"></div>
+</div>
+<div id="pause"><div>Click to play<br><small>WASD move · Shift walk · Ctrl crouch · Space / mouse wheel jump · LMB fire · RMB scope (AWP, 2 levels) · Q last weapon<br>R reload · 1/2/3/4 weapons · B buy · hold E plant/defuse · Tab scoreboard</small></div><button id="dc">Disconnect</button></div>
 <div id="menu">
 <div id="nav"><div data-k="new">New Game</div><div data-k="find">Find Servers</div><div data-k="opt">Options</div><div data-k="quit">Quit</div></div>
 <div id="logo">COUNTER-STRIKE<small>WEB EDITION · de_sandbox</small></div>
@@ -25,6 +34,13 @@
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/config.js"></script>
+<script src="maps/de_sandbox.js"></script>
+<script src="weapons/knife.js"></script>
+<script src="weapons/pistols.js"></script>
+<script src="weapons/smg.js"></script>
+<script src="weapons/rifles.js"></script>
+<script src="weapons/awp.js"></script>
+<script src="weapons/c4.js"></script>
 <script src="js/world.js"></script>
 <script src="js/model.js"></script>
 <script src="js/units.js"></script>
