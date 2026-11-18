@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Counter-Strike: Web Edition</title>
+<link rel="stylesheet" href="css/menu.css"><link rel="stylesheet" href="css/hud.css"></head><body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="scope"></div>
+  <canvas id="rad" width="130" height="130"></canvas>
+  <div id="score"></div>
+  <div id="feed"></div>
+  <div id="msg"></div>
+  <div id="hurt"></div>
+  <div id="xh"><i></i><i></i><i></i><i></i></div>
+  <div id="df"><i></i></div>
+  <div class="h" style="left:16px"><span>✚ <b id="hp">100</b></span><span>◈ <b id="ar">0</b></span></div>
+  <div class="h" style="left:50%;transform:translateX(-50%)"><span id="tm">1:55</span></div>
+  <div class="h" style="right:16px;flex-direction:column;align-items:flex-end;gap:0"><span id="mon" style="font-size:24px">$800</span><span id="am">30 | 90</span></div>
+  <div id="buy" class="w"></div>
+  <div id="sb"></div>
+</div>
+<div id="pause"><div>Click to play<br><small>WASD move · Shift walk · Ctrl crouch · Space / mouse wheel jump · LMB fire · RMB scope (AWP, 2 levels) · Q last weapon<br>R reload · 1/2/3/4 weapons · B buy · hold E plant/defuse · Tab scoreboard</small></div><button id="dc">Disconnect</button></div>
+<div id="menu">
+<div id="nav"><div data-k="new">New Game</div><div data-k="find">Find Servers</div><div data-k="opt">Options</div><div data-k="quit">Quit</div></div>
+<div id="logo">COUNTER-STRIKE<small>WEB EDITION · de_dust2</small></div>
+<div class="w" id="w-find"><h4>Servers</h4><div class="b"><table><thead><tr><th>Game</th><th>Players</th><th>Map</th><th>Ping</th></tr></thead><tbody>
+<tr class="s"><td>Local Server</td><td>10 / 10</td><td>de_dust2</td><td>0</td></tr><tr><td>Dust Lovers</td><td>7 / 32</td><td>de_dust2</td><td>24</td></tr><tr><td>Public #1</td><td>17 / 25</td><td>de_dust2</td><td>31</td></tr></tbody></table><button id="conn">Connect</button></div></div>
+<div class="w" id="w-new"><h4>Create Server</h4><div class="b">
+<label>Bot skill<select id="s-skill"><option value="0">Easy</option><option value="1" selected>Normal</option><option value="2">Hard</option></select></label>
+<label>Win limit (rounds)<input id="s-win" type="number" value="8" min="1" max="15"></label>
+<label>Time per round (s)<input id="s-rt" type="number" value="115"></label>
+<label>Starting money<input id="s-money" type="number" value="800"></label>
+<div style="text-align:right;margin-top:10px"><button id="go">Start</button></div></div></div>
+<div class="w" id="w-opt"><h4>Options</h4><div class="b">
+<label>Player name<input id="o-name" value="Player"></label><label>Sensitivity<input id="o-sens" type="range" min=".3" max="3" step=".1" value="1"></label>
+<label>Crosshair colour<select id="o-xh"><option value="#00ff00">Green</option><option value="#ff3030">Red</option><option value="#30ffff">Cyan</option><option value="#ffff30">Yellow</option></select></label></div></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/render.js"></script>
+<script src="maps/de_dust2.js"></script>
+<script src="weapons/knife.js"></script>
+<script src="weapons/pistols.js"></script>
+<script src="weapons/smg.js"></script>
+<script src="weapons/rifles.js"></script>
+<script src="weapons/awp.js"></script>
+<script src="weapons/c4.js"></script>
+<script src="js/world.js"></script>
+<script src="js/model.js"></script>
+<script src="js/units.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/movement.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/hands.js"></script>
+<script src="js/controllers.js"></script>
+<script src="js/round.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/buymenu.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+<script src="js/menu.js"></script>
+</body></html>
