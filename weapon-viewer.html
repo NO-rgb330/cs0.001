@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Weapon model viewer</title>
+<style>
+html,body{margin:0;height:100%;background:#222;overflow:hidden;font:12px Tahoma,Verdana,sans-serif;color:#dfe5d6}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;left:8px;top:8px;background:#000a;padding:8px;border:1px solid #6a7a5e;max-width:270px;max-height:96vh;overflow:auto}
+#ui button,#ui select{background:#3a4233;color:#dfe5d6;border:1px solid #8a9580;margin:2px;padding:3px 8px;cursor:pointer;font:inherit}
+#ui button:hover{background:#5d6b52}#ui label{display:block}#ui h4{margin:6px 0 2px;color:#ffb000;font-weight:400}
+#info{position:fixed;right:8px;top:8px;background:#000a;padding:6px 8px;border:1px solid #6a7a5e;white-space:pre}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui"><b>Weapon viewer</b> - drag to orbit, wheel to zoom
+<h4>Weapon</h4><select id="wsel"></select>
+<h4>Camera</h4><span id="views"></span>
+<h4>Display</h4><label><input type="checkbox" id="wire"> wireframe</label><label><input type="checkbox" id="hands"> gloved hands</label>
+<h4>Animation</h4><button id="fire">Fire</button><button id="reload">Reload</button><button id="loop">Loop fire</button><button id="sil">Silencer on/off</button>
+<h4>Assemblies</h4><div id="asm"></div></div>
+<div id="info"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/config.js"></script><script src="js/render.js"></script><script src="weapons/wm.js"></script>
+<script src="weapons/ak47.js"></script><script src="weapons/m4a1.js"></script><script src="js/hands.js"></script>
+<script>
+const $ = (i) => document.getElementById(i);
+const ren = new THREE.WebGLRenderer({ canvas: $('c'), antialias: false }), scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, 1, 0.01, 50);
+scene.background = new THREE.Color(0x7d858d);
+scene.add(new THREE.AmbientLight(0xffffff, 0.64)); const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(-0.3, 1, 0.6); scene.add(dl);
+const wrap = new THREE.Group(); scene.add(wrap);
+const IDS = ['ak47', 'm4a1'], RELOAD = { ak47: 2.45, m4a1: 3.05 };
+let wid = new URLSearchParams(location.search).get('w'); if (!IDS.includes(wid)) wid = 'ak47';
+let gun, ud, handsGrp, silOn = true;
+IDS.forEach((id) => { const o = document.createElement('option'); o.value = id; o.textContent = id; if (id === wid) o.selected = true; $('wsel').appendChild(o); });
+$('wsel').onchange = (e) => { wid = e.target.value; silOn = true; load(); };
+
+function load() {
+  if (gun) wrap.remove(gun);
+  gun = CS.WeaponModels[wid]({ sil: silOn }); ud = gun.userData; wrap.add(gun);
+  handsGrp = new THREE.Group(); gun.add(handsGrp);
+  const sl = CS.gfx.skin('sleeveCT'), gl = CS.gfx.skin('glove'), fz = -.14 - ud.vp[2];
+  CS.hands.hand(handsGrp, [ud.grip.r[0] + .06, ud.grip.r[1] - .12, fz], ud.grip.r, sl, gl, false);
+  if (ud.grip.l) CS.hands.hand(handsGrp, [ud.grip.l[0] - .10, ud.grip.l[1] - .12, fz], ud.grip.l, sl, gl, true);
+  handsGrp.visible = $('hands').checked;
+  $('asm').innerHTML = '';
+  for (const k in ud.assemblies) { const l = document.createElement('label'), c = document.createElement('input'); c.type = 'checkbox'; c.checked = true; c.onchange = () => ud.assemblies[k].visible = c.checked; l.append(c, ' ' + ud.assemblies[k].name); $('asm').appendChild(l); }
+  $('sil').style.display = wid === 'm4a1' ? '' : 'none';
+  $('wire').onchange();
+}
+let th = 0.9, ph = 1.2, dist = 1.4, fp = false; const tgt = new THREE.Vector3(0, -0.03, -0.15);
+const VIEWS = { 'Side': [Math.PI / 2, Math.PI / 2], 'Front': [Math.PI, Math.PI / 2], 'Rear': [0, Math.PI / 2], 'Top': [Math.PI / 2, 0.05], '3/4 front': [2.4, 1.25], '3/4 rear': [0.7, 1.25], 'First person': null };
+for (const k in VIEWS) { const b = document.createElement('button'); b.textContent = k; b.onclick = () => { fp = !VIEWS[k]; if (VIEWS[k]) { th = VIEWS[k][0]; ph = VIEWS[k][1]; } }; $('views').appendChild(b); }
+$('wire').onchange = () => gun.traverse((o) => { if (o.material) o.material.wireframe = $('wire').checked; });
+$('hands').onchange = (e) => handsGrp.visible = e.target.checked;
+let sinceFire = 9, reloadT = -1, attachT = -1, loopFire = false;
+$('fire').onclick = () => sinceFire = 0; $('reload').onclick = () => reloadT = 0; $('loop').onclick = () => loopFire = !loopFire; $('sil').onclick = () => { if (attachT < 0) attachT = 0; };
+let drag = null;
+$('c').onmousedown = (e) => drag = [e.clientX, e.clientY]; onmouseup = () => drag = null;
+onmousemove = (e) => { if (!drag || fp) return; th -= (e.clientX - drag[0]) * .01; ph = Math.max(.05, Math.min(3.09, ph - (e.clientY - drag[1]) * .01)); drag = [e.clientX, e.clientY]; };
+onwheel = (e) => { dist = Math.max(.3, Math.min(4, dist * (1 + e.deltaY * .001))); };
+function size() { ren.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); } onresize = size; size();
+load();
+let last = 0, sf = 0;
+(function loop(t) {
+  requestAnimationFrame(loop); const dt = Math.min(.05, (t - last) / 1000 || 0); last = t;
+  if (loopFire) { sf += dt; if (sf > .0955) { sf = 0; sinceFire = 0; } }
+  sinceFire += dt; if (reloadT >= 0) { reloadT += dt / RELOAD[wid]; if (reloadT >= 1) reloadT = -1; }
+  if (attachT >= 0) { attachT += dt / 2.2; if (attachT >= 1) { attachT = -1; silOn = !silOn; const w = wid; load(); } }
+  ud.animate({ rp: reloadT, ap: attachT, target: !silOn, sinceFire });
+  if (fp) { cam.fov = 66; cam.position.set(0, 0, 0); cam.lookAt(0, 0, -1); wrap.position.set(...ud.vp); }
+  else { cam.fov = 40; wrap.position.set(0, 0, 0); cam.position.set(tgt.x + dist * Math.sin(ph) * Math.cos(th), tgt.y + dist * Math.cos(ph), tgt.z + dist * Math.sin(ph) * Math.sin(th)); cam.lookAt(tgt); }
+  cam.updateProjectionMatrix(); ren.render(scene, cam);
+  $('info').textContent = wid + (wid === 'm4a1' ? (silOn ? ' (silenced)' : ' (no silencer)') : '') + '\ntriangles: ' + ren.info.render.triangles + '\ndraw calls: ' + ren.info.render.calls + '\nview: ' + (fp ? 'first person (fov 66)' : 'orbit');
+})(0);
+</script></body></html>

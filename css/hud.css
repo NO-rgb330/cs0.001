@@ -1,0 +1,21 @@
+/* hud.css - in-game HUD, buy menu, scoreboard, pause */
+#hud{position:fixed;inset:0;display:none;pointer-events:none;font-family:Verdana,Arial,sans-serif;z-index:3}
+#rad{position:absolute;left:10px;top:10px;border-radius:50%;border:1px solid #2a6a2a;z-index:2}
+#score{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#0007;padding:3px 14px;color:var(--y);font-size:14px;z-index:2}
+#feed{position:absolute;right:10px;top:10px;text-align:right;font-size:13px;text-shadow:0 0 3px #000;z-index:2}
+#msg{position:absolute;top:28%;width:100%;text-align:center;font-size:22px;color:var(--y);text-shadow:0 0 6px #000;z-index:2}
+.h{position:absolute;bottom:12px;color:var(--y);font-size:32px;font-weight:700;text-shadow:0 0 6px #000a;display:flex;gap:24px;z-index:2}
+#xh{position:absolute;left:50%;top:50%;z-index:2}#xh i{position:absolute;background:var(--x,#0f0);box-shadow:0 0 0 1px #0006}
+#xh i:nth-child(1){width:2px;height:8px;left:-1px;top:calc(-8px - var(--gp,4px))}#xh i:nth-child(2){width:2px;height:8px;left:-1px;top:var(--gp,4px)}
+#xh i:nth-child(3){height:2px;width:8px;top:-1px;left:calc(-8px - var(--gp,4px))}#xh i:nth-child(4){height:2px;width:8px;top:-1px;left:var(--gp,4px)}
+#hurt{position:absolute;inset:0;background:radial-gradient(transparent 40%,#d00);opacity:0;z-index:2}
+#buy{position:absolute;left:24px;top:26%;width:280px;display:none;background:#0a0f0acc;pointer-events:none;z-index:4}
+#buy .it{padding:3px 12px;color:var(--y)}#buy .it b{color:#fff;font-weight:400;margin-right:8px}#buy .it span{float:right;color:var(--t)}#buy .it.off,#buy .it.off b,#buy .it.off span{color:#76806b}
+#sb{position:absolute;left:50%;top:15%;transform:translateX(-50%);width:min(92vw,520px);display:none;background:#000b;padding:10px;z-index:5}
+#df{position:absolute;left:50%;bottom:90px;width:200px;height:10px;transform:translateX(-50%);border:1px solid var(--y);display:none;z-index:2}#df i{display:block;height:100%;background:var(--y)}
+#pause{position:fixed;inset:0;display:none;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#000a;z-index:6;cursor:pointer;font-size:20px;text-align:center}
+/* AWP scope: black mask with a round lens, thin crosshair + mil-dot style tick */
+#scope{position:absolute;inset:0;display:none;background:radial-gradient(circle at 50% 50%,transparent 0,transparent 38vmin,#000 38.4vmin);z-index:1}
+#scope:before,#scope:after{content:"";position:absolute;background:#000}
+#scope:before{left:calc(50% - 38vmin);width:76vmin;height:1px;top:50%}
+#scope:after{top:calc(50% - 38vmin);height:76vmin;width:1px;left:50%}
